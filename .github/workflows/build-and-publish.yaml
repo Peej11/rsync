@@ -40,9 +40,14 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Compute timestamp
+      - name: Compute build metadata
         id: vars
-        run: echo "timestamp=$(date -u +'%Y%m%d-%H%M%S')" >> "$GITHUB_OUTPUT"
+        run: |
+          echo "timestamp=$(date -u +'%Y%m%d-%H%M%S')" >> "$GITHUB_OUTPUT"
+          rsync_version=$(sed -n 's/^ARG RSYNC_VERSION="\{0,1\}\([^"]*\)"\{0,1\}.*/\1/p' Dockerfile)
+          alpine_version=$(sed -n 's/^FROM alpine:\([0-9][0-9.]*\).*/\1/p' Dockerfile)
+          echo "rsync_version=${rsync_version}" >> "$GITHUB_OUTPUT"
+          echo "alpine_version=${alpine_version}" >> "$GITHUB_OUTPUT"
 
       - name: Extract metadata
         id: meta
@@ -51,6 +56,8 @@ jobs:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           tags: |
             type=semver,pattern={{version}}
+            type=raw,value=${{ steps.vars.outputs.rsync_version }},enable=${{ github.ref == 'refs/heads/main' }}
+            type=raw,value=${{ steps.vars.outputs.rsync_version }}-alpine${{ steps.vars.outputs.alpine_version }},enable=${{ github.ref == 'refs/heads/main' }}
             type=raw,value=${{ steps.vars.outputs.timestamp }}-sha-{{sha}},enable=${{ github.ref == 'refs/heads/main' }}
 
       - name: Build and push
