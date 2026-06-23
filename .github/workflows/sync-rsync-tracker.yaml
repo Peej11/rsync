@@ -1,0 +1,74 @@
+name: Sync rsync tracker
+
+# Keeps the Renovate Repology tracker comment in the Dockerfile aligned with the
+# Alpine base minor version. When Renovate bumps `FROM alpine:X.Y.*` across a
+# minor (e.g. 3.23 -> 3.24), the `depName=alpine_X_Y/rsync` comment must follow,
+# otherwise rsync updates would be looked up against the wrong Alpine repo.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "Dockerfile"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: sync-rsync-tracker
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+
+      - name: Compare Alpine base minor with rsync tracker
+        id: check
+        run: |
+          set -euo pipefail
+          base_minor=$(sed -n 's/^FROM alpine:\([0-9][0-9]*\)\.\([0-9][0-9]*\).*/\1_\2/p' Dockerfile)
+          current=$(sed -n 's@.*depName=\(alpine_[0-9][0-9]*_[0-9][0-9]*/rsync\).*@\1@p' Dockerfile)
+          if [ -z "$base_minor" ] || [ -z "$current" ]; then
+            echo "::error::Could not parse Alpine base (\"$base_minor\") or tracker (\"$current\") from Dockerfile"
+            exit 1
+          fi
+          desired="alpine_${base_minor}/rsync"
+          echo "current=$current" >> "$GITHUB_OUTPUT"
+          echo "desired=$desired" >> "$GITHUB_OUTPUT"
+          if [ "$desired" = "$current" ]; then
+            echo "in_sync=true" >> "$GITHUB_OUTPUT"
+            echo "rsync tracker already targets $current — nothing to do."
+          else
+            echo "in_sync=false" >> "$GITHUB_OUTPUT"
+            echo "Mismatch: base maps to $desired but tracker is $current — fixing."
+          fi
+
+      - name: Open auto-merging PR to realign the tracker
+        if: steps.check.outputs.in_sync == 'false'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CURRENT: ${{ steps.check.outputs.current }}
+          DESIRED: ${{ steps.check.outputs.desired }}
+        run: |
+          set -euo pipefail
+          sed -i "s@depName=${CURRENT}@depName=${DESIRED}@" Dockerfile
+          branch="chore/sync-rsync-tracker"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git switch -c "$branch"
+          git commit -am "chore: track rsync via ${DESIRED} to match Alpine base"
+          git push -f -u origin "$branch"
+          if [ -z "$(gh pr list --head "$branch" --state open --json number -q '.[0].number')" ]; then
+            gh pr create --base main --head "$branch" \
+              --title "chore: sync rsync tracker to ${DESIRED}" \
+              --body "The Alpine base crossed a minor version, so the Renovate Repology tracker is updated from \`${CURRENT}\` to \`${DESIRED}\`. This keeps rsync updates looked up against the Alpine release the image actually uses."
+          fi
+          # Merge with GITHUB_TOKEN so this comment-only change neither rebuilds
+          # the image nor re-triggers this workflow. Delete the merge step to
+          # switch to review-before-merge instead.
+          gh pr merge "$branch" --squash --delete-branch
