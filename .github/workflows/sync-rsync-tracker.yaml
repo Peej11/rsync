@@ -13,8 +13,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write
-  pull-requests: write
+  contents: read
 
 concurrency:
   group: sync-rsync-tracker
@@ -26,6 +25,10 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          # Bot PAT so the commit is attributed to the bot and the push is
+          # allowed (GitHub Actions' own token can't be used here).
+          token: ${{ secrets.GH_TOKEN }}
 
       - name: Compare Alpine base minor with rsync tracker
         id: check
@@ -48,27 +51,17 @@ jobs:
             echo "Mismatch: base maps to $desired but tracker is $current — fixing."
           fi
 
-      - name: Open auto-merging PR to realign the tracker
+      - name: Commit realigned tracker to main
         if: steps.check.outputs.in_sync == 'false'
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           CURRENT: ${{ steps.check.outputs.current }}
           DESIRED: ${{ steps.check.outputs.desired }}
         run: |
           set -euo pipefail
           sed -i "s@depName=${CURRENT}@depName=${DESIRED}@" Dockerfile
-          branch="chore/sync-rsync-tracker"
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git switch -c "$branch"
-          git commit -am "chore: track rsync via ${DESIRED} to match Alpine base"
-          git push -f -u origin "$branch"
-          if [ -z "$(gh pr list --head "$branch" --state open --json number -q '.[0].number')" ]; then
-            gh pr create --base main --head "$branch" \
-              --title "chore: sync rsync tracker to ${DESIRED}" \
-              --body "The Alpine base crossed a minor version, so the Renovate Repology tracker is updated from \`${CURRENT}\` to \`${DESIRED}\`. This keeps rsync updates looked up against the Alpine release the image actually uses."
-          fi
-          # Merge with GITHUB_TOKEN so this comment-only change neither rebuilds
-          # the image nor re-triggers this workflow. Delete the merge step to
-          # switch to review-before-merge instead.
-          gh pr merge "$branch" --squash --delete-branch
+          git config user.name "Peej11-bot"
+          git config user.email "198817040+Peej11-Bot@users.noreply.github.com"
+          # [skip ci]: this is a comment-only change, so it must not rebuild the
+          # image or re-trigger this workflow.
+          git commit -am "chore: sync rsync tracker to ${DESIRED} [skip ci]"
+          git push origin HEAD:main
