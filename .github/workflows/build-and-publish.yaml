@@ -7,7 +7,6 @@ on:
     paths:
       - "Dockerfile"
       - ".dockerignore"
-      - ".github/workflows/build-and-publish.yaml"
   workflow_dispatch:
 
 permissions:
