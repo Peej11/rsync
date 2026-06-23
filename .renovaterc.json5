@@ -3,7 +3,7 @@
   extends: [
     "config:recommended",
     "docker:enableMajor",
-    ":pinDigests",
+    "docker:pinDigests",
     "helpers:pinGitHubActionDigests",
     ":automergeBranch",
     ":dependencyDashboard",
