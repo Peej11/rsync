@@ -1,0 +1,52 @@
+{
+  $schema: "https://docs.renovatebot.com/renovate-schema.json",
+  extends: [
+    "config:recommended",
+    "docker:enableMajor",
+    ":pinDigests",
+    "helpers:pinGitHubActionDigests",
+    ":automergeBranch",
+    ":dependencyDashboard",
+    ":disableRateLimiting",
+    ":semanticCommits",
+  ],
+  dependencyDashboard: true,
+  dependencyDashboardTitle: "Renovate Dashboard :robot:",
+  customManagers: [
+    {
+      customType: "regex",
+      description: "Track the rsync apk package version pinned in the Dockerfile",
+      managerFilePatterns: ["/(^|/)Dockerfile$/"],
+      matchStrings: [
+        "# renovate: datasource=(?<datasource>\\S+) depName=(?<depName>\\S+)(?: versioning=(?<versioning>\\S+))?\\s+ARG RSYNC_VERSION=\"?(?<currentValue>[^\"\\s]+)\"?",
+      ],
+      versioningTemplate: "{{#if versioning}}{{versioning}}{{else}}loose{{/if}}",
+    },
+  ],
+  packageRules: [
+    {
+      description: "Auto-merge the Alpine base image (tag + digest)",
+      matchDatasources: ["docker"],
+      matchPackageNames: ["alpine"],
+      automerge: true,
+      automergeType: "branch",
+      ignoreTests: true,
+    },
+    {
+      description: "Auto-merge the rsync apk package",
+      matchDatasources: ["repology"],
+      automerge: true,
+      automergeType: "branch",
+      ignoreTests: true,
+    },
+    {
+      description: "Auto-merge GitHub Actions",
+      matchManagers: ["github-actions"],
+      matchUpdateTypes: ["minor", "patch", "digest"],
+      automerge: true,
+      automergeType: "branch",
+      minimumReleaseAge: "3 days",
+      ignoreTests: true,
+    },
+  ],
+}
